@@ -68,7 +68,7 @@
             color: #cbd5e1;
             font-weight: 500;
         }
-        textarea, input, select {
+        select, input {
             width: 100%;
             padding: 12px;
             border-radius: 10px;
@@ -77,15 +77,6 @@
             color: #fff;
             font-size: 0.9rem;
             outline: none;
-        }
-        textarea {
-            height: 100px;
-            resize: vertical;
-            font-family: monospace;
-        }
-        .group-row {
-            display: flex;
-            gap: 8px;
         }
         .airport-grid {
             display: grid;
@@ -117,7 +108,6 @@
             font-size: 0.68rem;
             color: #94a3b8;
         }
-        /* 선택된 노선 비행 시간 안내 박스 스타일 */
         .route-notice {
             background: rgba(56, 189, 248, 0.1);
             border: 1px dashed rgba(56, 189, 248, 0.4);
@@ -168,25 +158,6 @@
             cursor: pointer;
             box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
             margin-top: 6px;
-        }
-        .btn:active {
-            transform: scale(0.98);
-        }
-        .btn-sub {
-            background: #334155;
-            box-shadow: none;
-            margin-top: 6px;
-            font-size: 0.9rem;
-        }
-        .btn-danger {
-            background: linear-gradient(135deg, #ef4444, #b91c1c);
-            box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);
-        }
-        .backup-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-            margin-top: 8px;
         }
         .flight-header {
             display: flex;
@@ -262,33 +233,18 @@
 <body>
 
 <div class="app-container">
-    <div class="brand">✈️ FocusFlight</div>
+    <div class="brand">✈️ FocusFlight (공유형)</div>
 
     <!-- Screen 1: 설정 화면 -->
     <div id="setup-screen" class="screen active">
         <h2 class="title">집중 비행 계획 수립</h2>
-        <p class="desc">단어 그룹을 선택/입력하고 노선과 좌석(난이도)을 설정하세요.</p>
+        <p class="desc">깃허브에서 단어장을 불러와 친구들과 실시간으로 공유됩니다.</p>
 
         <div class="form-group">
-            <label>📂 단어 그룹 선택 및 관리</label>
-            <div class="group-row">
-                <select id="group-select" onchange="onGroupSelectChange()" style="flex: 1;">
-                    <option value="">-- 저장된 그룹 선택 --</option>
-                </select>
-                <button class="btn btn-danger" style="width: auto; padding: 0 16px; margin-top:0;" onclick="deleteSelectedGroup()">🗑️ 삭제</button>
-            </div>
-            <div class="backup-row">
-                <button class="btn btn-sub" onclick="exportBackupFile()">💾 백업 파일 다운</button>
-                <button class="btn btn-sub" onclick="document.getElementById('import-file').click()">📂 백업 파일 열기</button>
-                <input type="file" id="import-file" style="display:none" accept=".json" onchange="importBackupFile(event)">
-            </div>
-        </div>
-
-        <div class="form-group" id="group-input-box">
-            <label>📊 엑셀 단어장 붙여넣기 (A열 \t B열)</label>
-            <input type="text" id="group-name-input" placeholder="그룹 이름 입력 (예: Day 1 토익)" style="margin-bottom: 8px;">
-            <textarea id="excel-input" placeholder="엑셀에서 A열, B열을 복사해서 그대로 붙여넣으세요!"></textarea>
-            <button class="btn btn-sub" onclick="saveNewGroup()">💾 현재 단어 그룹 저장하기</button>
+            <label>📂 단어 그룹 선택</label>
+            <select id="group-select">
+                <option value="">-- 단어장 불러오는 중... --</option>
+            </select>
         </div>
 
         <div class="form-group" style="margin-top: 14px;">
@@ -296,7 +252,6 @@
             <div class="airport-grid" id="airport-grid"></div>
         </div>
 
-        <!-- 목적지 선택과 좌석 선택 사이의 비행 시간 안내 공간 -->
         <div class="route-notice" id="route-notice-box">
             ✈️ 선택 노선: ICN ➔ NRT (예상 비행 시간: 20분)
         </div>
@@ -370,26 +325,18 @@
         { code: "DXB", name: "Dubai", time: 50 }
     ];
 
-    let selectedAirport = airports[1]; // 기본 도쿄 (20분)
+    let selectedAirport = airports[1];
     let selectedDifficulty = 'easy';
-    let savedGroups = {};
+    let loadedWordGroups = {};
     let currentQuestions = [];
     let currentIndex = 0;
     let timeLeft = 900;
     let timerInterval = null;
     let audioCtx = null, noiseNode = null, isSoundOn = false;
 
-    const defaultWords = [
-        { word: "1. expedite a process", mean: "과정을 신속하게 하다", hasNumber: true, originalRawNum: "1." },
-        { word: "2. streamline a process", mean: "과정을 간소화하다", hasNumber: true, originalRawNum: "2." },
-        { word: "streamline (2)", mean: "간소화하다, 유선형으로 하다", hasNumber: false, originalRawNum: "" },
-        { word: "3. accept an offer", mean: "제안을 수락하다", hasNumber: true, originalRawNum: "3." }
-    ];
-
     function initApp() {
         renderAirports();
-        loadGroupsFromStorage();
-        updateRouteNotice();
+        loadWordsFromJson();
     }
 
     function renderAirports() {
@@ -403,7 +350,7 @@
                 document.querySelectorAll('.airport-card').forEach(c => c.classList.remove('selected'));
                 card.classList.add('selected');
                 selectedAirport = apt;
-                updateRouteNotice(); // 선택 시 안내 문구 갱신
+                updateRouteNotice();
             };
             grid.appendChild(card);
         });
@@ -414,90 +361,23 @@
         noticeBox.textContent = `✈️ 선택 노선: ICN ➔ ${selectedAirport.code} (${selectedAirport.name}) / 예상 비행 시간: ${selectedAirport.time}분`;
     }
 
-    function loadGroupsFromStorage() {
-        const stored = localStorage.getItem('focusflight_word_groups');
-        if (stored) {
-            try { savedGroups = JSON.parse(stored); } catch(e) { savedGroups = {}; }
-        }
-        updateGroupSelectUI();
-    }
-
-    function updateGroupSelectUI() {
-        const select = document.getElementById('group-select');
-        select.innerHTML = '<option value="">-- 저장된 그룹 선택 --</option>';
-        Object.keys(savedGroups).forEach(groupName => {
-            const opt = document.createElement('option');
-            opt.value = groupName;
-            opt.textContent = `${groupName} (${savedGroups[groupName].length}개 단어)`;
-            select.appendChild(opt);
-        });
-    }
-
-    function onGroupSelectChange() {
-        const selectedGroup = document.getElementById('group-select').value;
-        if (selectedGroup && savedGroups[selectedGroup]) {
-            let textRep = "";
-            savedGroups[selectedGroup].forEach(item => {
-                let prefix = item.originalRawNum ? item.originalRawNum + " " : "";
-                textRep += `${prefix}${item.word}\t${item.mean}\n`;
+    // 깃허브에 올라간 words.json 파일을 자동으로 불러오는 함수
+    async function loadWordsFromJson() {
+        try {
+            const response = await fetch('words.json');
+            if (!response.ok) throw new Error('파일을 불러오지 못했습니다.');
+            loadedWordGroups = await response.json();
+            
+            const select = document.getElementById('group-select');
+            select.innerHTML = '';
+            Object.keys(loadedWordGroups).forEach(groupName => {
+                const opt = document.createElement('option');
+                opt.value = groupName;
+                opt.textContent = `${groupName} (${loadedWordGroups[groupName].length}개 단어)`;
+                select.appendChild(opt);
             });
-            document.getElementById('excel-input').value = textRep.trim();
-            document.getElementById('group-name-input').value = selectedGroup;
-        }
-    }
-
-    function saveNewGroup() {
-        const groupName = document.getElementById('group-name-input').value.trim();
-        const rawText = document.getElementById('excel-input').value;
-        if (!groupName) { alert("저장할 그룹 이름을 입력해주세요"); return; }
-        const parsed = parseExcelDataStrict(rawText);
-        if (parsed.length === 0) { alert("저장할 유효한 단어 데이터가 없습니다. (탭으로 구분되어 있는지 확인해주세요)"); return; }
-
-        savedGroups[groupName] = parsed;
-        localStorage.setItem('focusflight_word_groups', JSON.stringify(savedGroups));
-        updateGroupSelectUI();
-        document.getElementById('group-select').value = groupName;
-        alert(`[${groupName}] 그룹이 저장되었습니다! (${parsed.length}개 단어)`);
-    }
-
-    function deleteSelectedGroup() {
-        const selectedGroup = document.getElementById('group-select').value;
-        if (!selectedGroup) { alert("삭제할 그룹을 먼저 선택해주세요."); return; }
-        if (confirm(`정말로 [${selectedGroup}] 그룹을 삭제하시겠습니까?`)) {
-            delete savedGroups[selectedGroup];
-            localStorage.setItem('focusflight_word_groups', JSON.stringify(savedGroups));
-            updateGroupSelectUI();
-            document.getElementById('excel-input').value = "";
-            document.getElementById('group-name-input').value = "";
-            alert(`[${selectedGroup}] 그룹이 삭제되었습니다.`);
-        }
-    }
-
-    function exportBackupFile() {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(savedGroups));
-        const downloadAnchor = document.createElement('a');
-        downloadAnchor.setAttribute("href", dataStr);
-        downloadAnchor.setAttribute("download", "focusflight_backup.json");
-        document.body.appendChild(downloadAnchor);
-        downloadAnchor.click();
-        downloadAnchor.remove();
-    }
-
-    function importBackupFile(event) {
-        const fileReader = new FileReader();
-        if (event.target.files[0]) {
-            fileReader.readAsText(event.target.files[0], "UTF-8");
-            fileReader.onload = function (e) {
-                try {
-                    const imported = JSON.parse(e.target.result);
-                    savedGroups = imported;
-                    localStorage.setItem('focusflight_word_groups', JSON.stringify(savedGroups));
-                    updateGroupSelectUI();
-                    alert("백업 파일이 성공적으로 복원되었습니다!");
-                } catch (error) {
-                    alert("올바른 백업 파일(.json)이 아닙니다.");
-                }
-            }
+        } catch (error) {
+            document.getElementById('group-select').innerHTML = '<option value="">-- words.json 파일을 업로드해주세요 --</option>';
         }
     }
 
@@ -507,56 +387,18 @@
         el.classList.add('selected');
     }
 
-    function parseExcelDataStrict(text) {
-        const lines = text.split('\n');
-        const list = [];
-        for (let line of lines) {
-            line = line.trim();
-            if (!line) continue;
-
-            let parts = line.split('\t');
-            if (parts.length < 2) {
-                parts = line.split(/   +/);
-            }
-
-            if (parts.length >= 2) {
-                let rawCol = parts[0].trim();
-                let mean = parts.slice(1).join(' ').trim();
-                
-                const numMatch = rawCol.match(/^(\d+[\.\)]|\d+\-)\s*(.*)/);
-                let hasNumber = false;
-                let cleanWord = rawCol;
-                let originalRawNum = "";
-
-                if (numMatch) {
-                    hasNumber = true;
-                    originalRawNum = numMatch[1];
-                    cleanWord = numMatch[2].trim();
-                }
-
-                if (cleanWord && mean) {
-                    list.push({ word: cleanWord, mean: mean, hasNumber: hasNumber, originalRawNum: originalRawNum });
-                }
-            }
-        }
-        return list;
-    }
-
     function startFlight() {
         const selectedGroupKey = document.getElementById('group-select').value;
-        let wordBank = [];
-        if (selectedGroupKey && savedGroups[selectedGroupKey]) {
-            wordBank = savedGroups[selectedGroupKey];
-        } else {
-            const rawText = document.getElementById('excel-input').value;
-            wordBank = parseExcelDataStrict(rawText);
-            if (wordBank.length === 0) wordBank = defaultWords;
+        if (!selectedGroupKey || !loadedWordGroups[selectedGroupKey]) {
+            alert("단어 그룹을 선택해주세요.");
+            return;
         }
+
+        let wordBank = loadedWordGroups[selectedGroupKey];
 
         if (selectedDifficulty === 'easy') {
             currentQuestions = wordBank.filter(item => item.hasNumber === true);
             if (currentQuestions.length === 0) {
-                alert("Easy 모드는 앞에 번호(예: 1., 2.)가 적힌 콜로케이션 단어만 출제됩니다. 현재 그룹에 번호가 붙은 단어가 없습니다. 전체 단어로 진행합니다.");
                 currentQuestions = [...wordBank];
             }
         } else {
@@ -654,10 +496,10 @@
                 currentIndex++;
                 loadQuestion();
             } else {
-                timeLeft -= 30; // 오답 시 30초 차감[cite: 1]
+                timeLeft -= 30;
                 if (timeLeft < 0) timeLeft = 0;
                 updateTimerDisplay();
-                alert(`⚠️ 난기류 발생! 오답입니다. (정답: ${current.hiddenTarget}) 제한시간 30초가 차감되고 다음 문제로 넘어갑니다.[cite: 1]`);
+                alert(`⚠️ 난기류 발생! 오답입니다. (정답: ${current.hiddenTarget}) 제한시간 30초가 차감됩니다.`);
                 currentIndex++;
                 if (timeLeft === 0) { endFlight(false); return; }
                 loadQuestion();
@@ -669,10 +511,10 @@
                 currentIndex++;
                 loadQuestion();
             } else {
-                timeLeft -= 30; // 오답 시 30초 차감[cite: 1]
+                timeLeft -= 30;
                 if (timeLeft < 0) timeLeft = 0;
                 updateTimerDisplay();
-                alert(`⚠️ 난기류 발생! 오답입니다. (정답: ${current.mean}) 제한시간 30초가 차감되고 다음 문제로 넘어갑니다.[cite: 1]`);
+                alert(`⚠️ 난기류 발생! 오답입니다. (정답: ${current.mean}) 제한시간 30초가 차감됩니다.`);
                 currentIndex++;
                 if (timeLeft === 0) { endFlight(false); return; }
                 loadQuestion();
@@ -686,10 +528,10 @@
             currentIndex++;
             loadQuestion();
         } else {
-            timeLeft -= 30; // 오답 시 30초 차감[cite: 1]
+            timeLeft -= 30;
             if (timeLeft < 0) timeLeft = 0;
             updateTimerDisplay();
-            alert(`⚠️ 난기류 발생! 오답입니다. (정답: ${current.mean}) 제한시간 30초가 차감되고 다음 문제로 넘어갑니다.[cite: 1]`);
+            alert(`⚠️ 난기류 발생! 오답입니다. (정답: ${current.mean}) 제한시간 30초가 차감됩니다.`);
             currentIndex++;
             if (timeLeft === 0) { endFlight(false); return; }
             loadQuestion();
