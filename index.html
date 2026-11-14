@@ -121,7 +121,7 @@
         }
         .seat-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(2, 1fr);
             gap: 8px;
             margin-bottom: 16px;
         }
@@ -185,19 +185,29 @@
             background: #1e293b;
             border: 1px solid #334155;
             border-radius: 14px;
-            padding: 20px;
+            padding: 24px;
             text-align: center;
             margin-bottom: 16px;
+            min-height: 150px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .quiz-card:active {
+            transform: scale(0.98);
         }
         .quiz-word {
-            font-size: 1.25rem;
+            font-size: 1.35rem;
             color: #fbbf24;
             font-weight: bold;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             word-break: break-all;
         }
         .quiz-hint {
-            font-size: 0.85rem;
+            font-size: 0.95rem;
             color: #f8fafc;
         }
         .choices-grid {
@@ -219,6 +229,20 @@
         }
         .choice-btn:hover {
             background: #334155;
+        }
+        .flashcard-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .btn-dontknow {
+            background: linear-gradient(135deg, #ef4444, #b91c1c);
+            box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);
+        }
+        .btn-know {
+            background: linear-gradient(135deg, #10b981, #047857);
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
         }
         .sound-btn {
             background: #334155;
@@ -257,9 +281,13 @@
         </div>
 
         <div class="form-group">
-            <label>💺 좌석 선택 (난이도 모드)</label>
+            <label>💺 학습 모드 선택</label>
             <div class="seat-grid">
-                <div class="seat-card selected" onclick="setDifficulty('easy', this)">
+                <div class="seat-card selected" onclick="setDifficulty('flashcard', this)">
+                    <h4>Flashcard</h4>
+                    <p>플래시카드 (영어 앞, 뜻 뒤)</p>
+                </div>
+                <div class="seat-card" onclick="setDifficulty('easy', this)">
                     <h4>Easy</h4>
                     <p>번호 콜로케이션 빈칸</p>
                 </div>
@@ -277,7 +305,7 @@
         <button class="btn" onclick="startFlight()">비행기 탑승 및 출발</button>
     </div>
 
-    <!-- Screen 2: 퀴즈 화면 -->
+    <!-- Screen 2: 퀴즈/플래시카드 화면 -->
     <div id="quiz-screen" class="screen">
         <div class="flight-header">
             <div>항로: <span id="route-info">ICN ➔ ICN</span></div>
@@ -286,12 +314,18 @@
 
         <div class="timer-display" id="timer">15:00</div>
 
-        <div class="quiz-card">
+        <div class="quiz-card" id="card-box" onclick="handleCardClick()">
             <div class="quiz-word" id="q-word">Loading...</div>
-            <div class="quiz-hint" id="q-hint">빈칸에 들어갈 단어를 입력하세요</div>
+            <div class="quiz-hint" id="q-hint">화면을 눌러 뜻 확인하기</div>
         </div>
 
-        <div id="input-area" class="form-group">
+        <!-- 플래시카드 전용 하단 버튼 -->
+        <div id="flashcard-action-area" class="flashcard-buttons" style="display:none;">
+            <button class="btn btn-dontknow" onclick="markFlashcard(false)">❌ 안 외움</button>
+            <button class="btn btn-know" onclick="markFlashcard(true)">⭕ 외움</button>
+        </div>
+
+        <div id="input-area" class="form-group" style="display:none;">
             <input type="text" id="user-answer" placeholder="정답 입력 후 엔터" autocomplete="off">
             <button class="btn" onclick="submitAnswer()">제출하기</button>
         </div>
@@ -326,13 +360,17 @@
     ];
 
     let selectedAirport = airports[1];
-    let selectedDifficulty = 'easy';
+    let selectedDifficulty = 'flashcard';
     let loadedWordGroups = {};
     let currentQuestions = [];
+    let unlearnedQuestions = []; // 안 외운 단어들을 모아둘 배열
     let currentIndex = 0;
     let timeLeft = 900;
     let timerInterval = null;
     let audioCtx = null, noiseNode = null, isSoundOn = false;
+    
+    // 플래시카드 뒤집힘 상태 관리
+    let isCardFlipped = false;
 
     function initApp() {
         renderAirports();
@@ -361,7 +399,6 @@
         noticeBox.textContent = `✈️ 선택 노선: ICN ➔ ${selectedAirport.code} (${selectedAirport.name}) / 예상 비행 시간: ${selectedAirport.time}분`;
     }
 
-    // 깃허브에 올라간 words.json 파일을 자동으로 불러오는 함수
     async function loadWordsFromJson() {
         try {
             const response = await fetch('words.json');
@@ -398,13 +435,12 @@
 
         if (selectedDifficulty === 'easy') {
             currentQuestions = wordBank.filter(item => item.hasNumber === true);
-            if (currentQuestions.length === 0) {
-                currentQuestions = [...wordBank];
-            }
+            if (currentQuestions.length === 0) currentQuestions = [...wordBank];
         } else {
             currentQuestions = [...wordBank];
         }
 
+        unlearnedQuestions = [];
         currentIndex = 0;
         timeLeft = selectedAirport.time * 60;
 
@@ -420,8 +456,19 @@
 
     function loadQuestion() {
         if (currentIndex >= currentQuestions.length) {
-            endFlight(true);
-            return;
+            // 한 바퀴 끝났을 때 안 외운 단어가 있다면 그 단어들로 재도전 리스트 세팅
+            if (unlearnedQuestions.length > 0) {
+                currentQuestions = [...unlearnedQuestions];
+                unlearnedQuestions = [];
+                currentIndex = 0;
+                document.getElementById('total-q').textContent = currentQuestions.length;
+                alert("🔄 복습 시간! 앞에서 '안 외움'으로 체크한 단어들만 다시 반복합니다.");
+                loadQuestion();
+                return;
+            } else {
+                endFlight(true);
+                return;
+            }
         }
 
         document.getElementById('current-q').textContent = currentIndex + 1;
@@ -429,9 +476,19 @@
         
         const inputArea = document.getElementById('input-area');
         const choicesArea = document.getElementById('choices-area');
+        const flashcardActionArea = document.getElementById('flashcard-action-area');
         const allMeans = currentQuestions.map(q => q.mean);
 
-        if (selectedDifficulty === 'easy') {
+        if (selectedDifficulty === 'flashcard') {
+            inputArea.style.display = 'none';
+            choicesArea.style.display = 'none';
+            flashcardActionArea.style.display = 'grid';
+
+            isCardFlipped = false;
+            document.getElementById('q-word').textContent = current.word;
+            document.getElementById('q-hint').textContent = "👆 카드를 누르면 뜻이 나옵니다";
+        } else if (selectedDifficulty === 'easy') {
+            flashcardActionArea.style.display = 'none';
             inputArea.style.display = 'block';
             choicesArea.style.display = 'none';
 
@@ -456,6 +513,7 @@
             document.getElementById('user-answer').placeholder = "빈칸에 들어갈 단어 입력";
 
         } else if (selectedDifficulty === 'normal') {
+            flashcardActionArea.style.display = 'none';
             inputArea.style.display = 'none';
             choicesArea.style.display = 'grid';
             document.getElementById('q-word').textContent = current.word;
@@ -477,6 +535,7 @@
                 choicesArea.appendChild(btn);
             });
         } else {
+            flashcardActionArea.style.display = 'none';
             inputArea.style.display = 'block';
             choicesArea.style.display = 'none';
             document.getElementById('q-word').textContent = current.word;
@@ -484,6 +543,31 @@
             document.getElementById('user-answer').value = '';
             document.getElementById('user-answer').placeholder = "뜻을 입력하세요";
         }
+    }
+
+    // 플래시카드 카드 클릭 시 앞/뒤 뒤집기
+    function handleCardClick() {
+        if (selectedDifficulty !== 'flashcard') return;
+        const current = currentQuestions[currentIndex];
+        isCardFlipped = !isCardFlipped;
+
+        if (isCardFlipped) {
+            document.getElementById('q-word').textContent = current.mean;
+            document.getElementById('q-hint').textContent = `💡 뜻 (영어 원문: ${current.word})`;
+        } else {
+            document.getElementById('q-word').textContent = current.word;
+            document.getElementById('q-hint').textContent = "👆 카드를 누르면 뜻이 나옵니다";
+        }
+    }
+
+    // 플래시카드 하단 버튼 (외움 / 안 외움) 처리
+    function markFlashcard(isKnown) {
+        const current = currentQuestions[currentIndex];
+        if (!isKnown) {
+            unlearnedQuestions.push(current); // 안 외운 단어 저장
+        }
+        currentIndex++;
+        loadQuestion();
     }
 
     function submitAnswer() {
@@ -524,7 +608,7 @@
 
     function checkAnswer(userVal, correctVal) {
         const current = currentQuestions[currentIndex];
-        if (userVal !== "" && (correctVal.includes(userVal) || userVal.includes(correctVal))) {
+        if (userVal !== "" && (correctVal.includes(userVal) || correctVal.includes(userVal))) {
             currentIndex++;
             loadQuestion();
         } else {
@@ -562,7 +646,7 @@
         document.getElementById('quiz-screen').classList.remove('active');
         document.getElementById('result-screen').classList.add('active');
         document.getElementById('result-desc').textContent = success ? 
-            `ICN에서 ${selectedAirport.code}(${selectedAirport.name})까지의 모든 퀘스트를 완수했습니다!` : 
+            `ICN에서 ${selectedAirport.code}(${selectedAirport.name})까지의 모든 플래시카드 학습을 완수했습니다!` : 
             "연료(시간)가 소진되어 비행이 중단되었습니다. 다시 도전해 보세요!";
     }
 
