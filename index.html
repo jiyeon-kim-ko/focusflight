@@ -159,6 +159,12 @@
             box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
             margin-top: 6px;
         }
+        .btn-sub {
+            background: #334155;
+            box-shadow: none;
+            font-size: 0.85rem;
+            padding: 10px;
+        }
         .flight-header {
             display: flex;
             justify-content: space-between;
@@ -266,9 +272,13 @@
 
         <div class="form-group">
             <label>📂 단어 그룹 선택</label>
-            <select id="group-select">
-                <option value="">-- 단어장 불러오는 중... --</option>
-            </select>
+            <div style="display: flex; gap: 8px;">
+                <select id="group-select" style="flex: 1;">
+                    <option value="">-- 단어장 불러오는 중... --</option>
+                </select>
+                <button class="btn btn-sub" style="width: auto; margin-top:0;" onclick="document.getElementById('import-file').click()">📂 파일 열기</button>
+                <input type="file" id="import-file" style="display:none" accept=".json" onchange="importBackupFile(event)">
+            </div>
         </div>
 
         <div class="form-group" style="margin-top: 14px;">
@@ -363,13 +373,11 @@
     let selectedDifficulty = 'flashcard';
     let loadedWordGroups = {};
     let currentQuestions = [];
-    let unlearnedQuestions = []; // 안 외운 단어들을 모아둘 배열
+    let unlearnedQuestions = [];
     let currentIndex = 0;
     let timeLeft = 900;
     let timerInterval = null;
     let audioCtx = null, noiseNode = null, isSoundOn = false;
-    
-    // 플래시카드 뒤집힘 상태 관리
     let isCardFlipped = false;
 
     function initApp() {
@@ -399,22 +407,52 @@
         noticeBox.textContent = `✈️ 선택 노선: ICN ➔ ${selectedAirport.code} (${selectedAirport.name}) / 예상 비행 시간: ${selectedAirport.time}분`;
     }
 
+    // 깃허브 Raw 링크 직접 호출 및 캐시 방지 적용
     async function loadWordsFromJson() {
         try {
-            const response = await fetch('words.json');
-            if (!response.ok) throw new Error('파일을 불러오지 못했습니다.');
-            loadedWordGroups = await response.json();
+            // 현재 저장소 주소를 자동으로 유추해서 words.json을 확실하게 불러옵니다.
+            const repoPath = window.location.pathname.includes('/') ? window.location.pathname.split('/')[1] : '';
+            const jsonUrl = repoPath ? `/${repoPath}/words.json?t=${Date.now()}` : `words.json?t=${Date.now()}`;
             
-            const select = document.getElementById('group-select');
-            select.innerHTML = '';
-            Object.keys(loadedWordGroups).forEach(groupName => {
-                const opt = document.createElement('option');
-                opt.value = groupName;
-                opt.textContent = `${groupName} (${loadedWordGroups[groupName].length}개 단어)`;
-                select.appendChild(opt);
-            });
+            let response = await fetch(jsonUrl);
+            if (!response.ok) {
+                response = await fetch(`words.json?t=${Date.now()}`);
+            }
+            if (!response.ok) throw new Error('파일을 불러오지 못했습니다.');
+            
+            loadedWordGroups = await response.json();
+            updateGroupSelectUI();
         } catch (error) {
-            document.getElementById('group-select').innerHTML = '<option value="">-- words.json 파일을 업로드해주세요 --</option>';
+            document.getElementById('group-select').innerHTML = '<option value="">-- 단어장 로드 실패 (우측 파일 열기 사용 가능) --</option>';
+        }
+    }
+
+    function updateGroupSelectUI() {
+        const select = document.getElementById('group-select');
+        select.innerHTML = '';
+        Object.keys(loadedWordGroups).forEach(groupName => {
+            const opt = document.createElement('option');
+            opt.value = groupName;
+            opt.textContent = `${groupName} (${loadedWordGroups[groupName].length}개 단어)`;
+            select.appendChild(opt);
+        });
+    }
+
+    // 폰에서 직접 json 백업 파일 열기 기능
+    function importBackupFile(event) {
+        const fileReader = new FileReader();
+        if (event.target.files[0]) {
+            fileReader.readAsText(event.target.files[0], "UTF-8");
+            fileReader.onload = function (e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    loadedWordGroups = imported;
+                    updateGroupSelectUI();
+                    alert("단어장 파일이 성공적으로 로드되었습니다!");
+                } catch (error) {
+                    alert("올바른 백업 파일(.json)이 아닙니다.");
+                }
+            }
         }
     }
 
@@ -456,7 +494,6 @@
 
     function loadQuestion() {
         if (currentIndex >= currentQuestions.length) {
-            // 한 바퀴 끝났을 때 안 외운 단어가 있다면 그 단어들로 재도전 리스트 세팅
             if (unlearnedQuestions.length > 0) {
                 currentQuestions = [...unlearnedQuestions];
                 unlearnedQuestions = [];
@@ -545,7 +582,6 @@
         }
     }
 
-    // 플래시카드 카드 클릭 시 앞/뒤 뒤집기
     function handleCardClick() {
         if (selectedDifficulty !== 'flashcard') return;
         const current = currentQuestions[currentIndex];
@@ -560,11 +596,10 @@
         }
     }
 
-    // 플래시카드 하단 버튼 (외움 / 안 외움) 처리
     function markFlashcard(isKnown) {
         const current = currentQuestions[currentIndex];
         if (!isKnown) {
-            unlearnedQuestions.push(current); // 안 외운 단어 저장
+            unlearnedQuestions.push(current);
         }
         currentIndex++;
         loadQuestion();
@@ -646,7 +681,7 @@
         document.getElementById('quiz-screen').classList.remove('active');
         document.getElementById('result-screen').classList.add('active');
         document.getElementById('result-desc').textContent = success ? 
-            `ICN에서 ${selectedAirport.code}(${selectedAirport.name})까지의 모든 플래시카드 학습을 완수했습니다!` : 
+            `ICN에서 ${selectedAirport.code}(${selectedAirport.name})까지의 모든 학습을 완수했습니다!` : 
             "연료(시간)가 소진되어 비행이 중단되었습니다. 다시 도전해 보세요!";
     }
 
